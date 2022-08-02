@@ -8,13 +8,14 @@ import com.itheima.reggie.entity.Setmeal;
 import com.itheima.reggie.entity.ShoppingCart;
 import com.itheima.reggie.service.ShoppingCartService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeanUtils;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.ObjectUtils;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
+import java.time.LocalDateTime;
+import java.util.List;
 
 @Slf4j
 @RestController
@@ -52,9 +53,12 @@ public class ShoppingCartController {
         ShoppingCart cart = shoppingCartService.getOne(shoppingCartLambdaQueryWrapper);
         if(!ObjectUtils.isEmpty(cart)){
             cart.setNumber(cart.getNumber() + 1);
+            shoppingCartService.updateById(cart);
         }else{
             shoppingCart.setUserId(currentUserId);
+            shoppingCart.setCreateTime(LocalDateTime.now());
             shoppingCartService.save(shoppingCart);
+            cart = shoppingCart;
         }
 
 
@@ -63,5 +67,40 @@ public class ShoppingCartController {
 
 
     // 获取购物车商品集合
+    @GetMapping("/list")
+    public R<List<ShoppingCart>> getCartList(){
+        // Get current user id
+        Long currentId = BaseContext.getCurrentId();
+
+        // create a new query wrapper to get the cart of the current user
+        LambdaQueryWrapper<ShoppingCart> shoppingCartLambdaQueryWrapper = new LambdaQueryWrapper<>();
+        shoppingCartLambdaQueryWrapper.eq(ShoppingCart::getUserId, currentId);
+        shoppingCartLambdaQueryWrapper.orderByAsc(ShoppingCart::getCreateTime);
+
+        List<ShoppingCart> list = shoppingCartService.list(shoppingCartLambdaQueryWrapper);
+
+        return R.success(list);
+    }
+
+    // 清空购物车
+    @Transactional
+    @DeleteMapping("clean")
+    public R<String> cleanShoppingCart(){
+        Long currentId = BaseContext.getCurrentId();
+
+        LambdaQueryWrapper<ShoppingCart> shoppingCartLambdaQueryWrapper = new LambdaQueryWrapper<>();
+        shoppingCartLambdaQueryWrapper.eq(ShoppingCart::getUserId, currentId);
+
+        List<ShoppingCart> list = shoppingCartService.list(shoppingCartLambdaQueryWrapper);
+
+        if(ObjectUtils.isEmpty(list)){
+            return R.error("购物车不存在");
+        }else{
+            shoppingCartService.remove(shoppingCartLambdaQueryWrapper);
+        }
+
+        return R.success("购物车已清空");
+    }
     
 }
+
