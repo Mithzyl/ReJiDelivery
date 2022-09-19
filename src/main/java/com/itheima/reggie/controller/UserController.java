@@ -9,6 +9,8 @@ import com.itheima.reggie.utils.SMSUtils;
 import com.itheima.reggie.utils.ValidateCodeUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang.StringUtils;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.SetOperations;
 import org.springframework.util.ObjectUtils;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -20,6 +22,7 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @RestController
@@ -28,6 +31,9 @@ public class UserController {
 
     @Resource
     private UserService userService;
+
+    @Resource
+    private RedisTemplate<Object, Object> redisTemplate;
 
     // 获取验证码
     @PostMapping("/sendMsg")
@@ -48,8 +54,12 @@ public class UserController {
 //            log.info("无法发送验证码");
 //        }
 
-            // 生成的验证码保存到Session
-            session.setAttribute(number, testCode);
+            // 生成的验证码保存到Session 被 Redis 替换
+//            session.setAttribute(number, testCode);
+
+            // Redis 替换 设置有效期为5分钟
+            redisTemplate.opsForValue().set(number, testCode, 5, TimeUnit.MINUTES);
+
 
             return R.success("发送成功");
         }
@@ -69,10 +79,18 @@ public class UserController {
         userLambdaQueryWrapper.eq(User::getPhone, phone);
 
 
-        Object verifyCode = session.getAttribute(phone);
+        // get the text code from session replaced by Redis
+        // Object verifyCode = session.getAttribute(phone);
+
+        // get the text code from redis
+        Object verifyCode = redisTemplate.opsForValue().get(phone);
+
 
         if(!ObjectUtils.isEmpty(verifyCode) && verifyCode.equals(code)){
             User user = userService.getOne(userLambdaQueryWrapper);
+            // remove text code from session if the user succeeds in login
+
+            redisTemplate.delete(phone);
 
             if(!ObjectUtils.isEmpty(user)){
                 session.setAttribute("user", user.getId());
@@ -86,7 +104,6 @@ public class UserController {
                 session.setAttribute("user", newUser.getId());
 
                 return R.success(newUser);
-
 
             }
 
